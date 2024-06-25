@@ -402,6 +402,58 @@ export default {
 				);
 			}
 		},
+		formatNotes(page) {
+			return [
+				{ heading_2: { rich_text: [{ text: { content: "Main Points" } }] } },
+				...page.main_points.map(point => ({ bullet_list_item: { rich_text: [{ text: { content: point } }] } })),
+				{ heading_2: { rich_text: [{ text: { content: "Stories and Examples" } }] } },
+				...page.stories.map(story => ({ bullet_list_item: { rich_text: [{ text: { content: story } }] } })),
+				{ heading_2: { rich_text: [{ text: { content: "References and Citations" } }] } },
+				...page.references.map(ref => ({ bullet_list_item: { rich_text: [{ text: { content: ref } }] } })),
+			];
+		},
+
+		formatIntegration(page) {
+			return [
+				{ heading_2: { rich_text: [{ text: { content: "Potential Action Items" } }] } },
+				...page.action_items.map(item => ({ to_do: { rich_text: [{ text: { content: item } }], checked: false } })),
+				{ heading_2: { rich_text: [{ text: { content: "Follow-Up Questions" } }] } },
+				...page.follow_up.map(question => ({ bullet_list_item: { rich_text: [{ text: { content: question } }] } })),
+				{ heading_2: { rich_text: [{ text: { content: "Arguments and Areas for Improvement" } }] } },
+				{ callout: { rich_text: [{ text: { content: "These are potential arguments and rebuttals that other people may bring up in response to the transcript. Like every other part of this summary document, factual accuracy is not guaranteed." } }], icon: { emoji: "⚠️" } } },
+				...page.arguments.map(arg => ({ bullet_list_item: { rich_text: [{ text: { content: arg } }] } })),
+			];
+		},
+
+		formatAltText(page) {
+			return [
+				{ heading_2: { rich_text: [{ text: { content: "Related Topics" } }] } },
+				...page.related_topics.map(topic => ({ bullet_list_item: { rich_text: [{ text: { content: topic } }] } })),
+			];
+		},
+
+		formatMeta(page) {
+    return [
+        { bullet_list_item: { rich_text: [{ text: { content: `Sentiment: ${page.sentiment || 'Not available'}` } }] } },
+        { bullet_list_item: { rich_text: [{ text: { content: `Transcription Cost: $${(page.transcriptionCost || 0).toFixed(3)}` } }] } },
+        { bullet_list_item: { rich_text: [{ text: { content: `Chat API Cost: $${(page.chatCost || 0).toFixed(3)}` } }] } },
+        { bullet_list_item: { rich_text: [{ text: { content: `Total Cost: $${(page.totalCost || 0).toFixed(3)}` } }] } },
+    ];
+},
+
+
+		async addFooterToNotion(notion, pageID) {
+			const footer = [
+				{ divider: {} },
+				{ paragraph: { rich_text: [{ text: { content: "🔽 ", link: { url: "https://wsc.fyi/logs" } } }, { text: { content: "[↩Logs]", link: { url: "https://wsc.fyi/logs" } } }] } },
+				{ divider: {} },
+				{ paragraph: { rich_text: [{ text: { content: "※Take what you need, if it brings you into delight※" } }] } },
+				{ paragraph: { rich_text: [{ text: { content: "2027 weseeclearly CC BY 4.0 DEED" } }] } },
+			];
+
+			return this.sendAdditionalInfotoNotion(notion, footer, pageID);
+		},
+
 		setLanguages() {
 			if (this.transcript_language) {
 				console.log(`User set transcript language to ${this.transcript_language}.`);
@@ -1342,6 +1394,7 @@ export default {
 			const finalChatResponse = {
 				title: chatResponse.title,
 				summary: chatResponse.summary.join(" "),
+				tldr: this.createTLDR(chatResponse.summary.join(" ")),
 				...(this.summary_options.includes("Sentiment") && {
 					sentiment: chatResponse.sentiment,
 				}),
@@ -1362,6 +1415,13 @@ export default {
 			console.dir(finalChatResponse, { depth: null });
 
 			return finalChatResponse;
+		},
+
+		createTLDR(summary) {
+			// You might want to use OpenAI to generate a shorter TL;DR
+			// For now, we'll just take the first two sentences
+			const sentences = summary.split('.');
+			return sentences.slice(0, 2).join('.') + '.';
 		},
 		makeParagraphs(transcript, maxLength = 1200) {
 			const languageCode = franc(transcript);
@@ -1709,7 +1769,46 @@ export default {
 							icon: {
 								emoji: this.noteIcon,
 							},
-							color: "blue_background",
+							color: "default",
+						},
+					},
+					{
+						quote: {
+							rich_text: [
+								{
+									text: {
+										content: `**TL;DR** ⧝ ${meta.tldr}`,
+									},
+								},
+							],
+						},
+					},
+					{
+						divider: {},
+					},
+					{
+						image: {
+							external: {
+								url: "IMAGE_URL_HERE", // You'll need to implement image uploading
+							},
+							caption: [
+								{
+									text: {
+										content: "*(daily creating - image caption here)*",
+									},
+								},
+							],
+						},
+					},
+					{
+						heading_1: {
+							rich_text: [
+								{
+									text: {
+										content: "Transcript",
+									},
+								},
+							],
 						},
 					},
 					{
@@ -1951,7 +2050,7 @@ export default {
 
 			return responseHolder;
 		},
-		async updateNotionPage(notion, page) {
+async updateNotionPage(notion, page) {
 			console.log(`Updating the Notion page with all leftover information:`);
 			console.dir(page);
 
@@ -1964,6 +2063,23 @@ export default {
 
 			const allAPIResponses = {};
 
+			// Update Summary property with TL;DR
+			await notion.pages.update({
+				page_id: pageID,
+				properties: {
+					Summary: {
+						rich_text: [
+							{
+								text: {
+									content: page.tldr,
+								},
+							},
+						],
+					},
+				},
+			});
+
+			// Existing content addition logic, modified to follow the new structure
 			if (page.summary) {
 				const summaryArray = page.summary;
 				const summaryAdditionResponses = await Promise.all(
@@ -1974,8 +2090,8 @@ export default {
 								summary,
 								pageID,
 								index,
-								page.summary_header,
-								"summary"
+								"Transcript",
+								"transcript"
 							)
 						)
 					)
@@ -1993,7 +2109,7 @@ export default {
 								translation,
 								pageID,
 								index,
-								page.translation_header,
+								"Translated Transcript",
 								"translation"
 							)
 						)
@@ -2001,6 +2117,43 @@ export default {
 				);
 				allAPIResponses.translation_responses = translationAdditionResponses;
 			}
+
+			// Add Notes section
+			const notesContent = this.formatNotes(page);
+			const notesResponse = await limiter.schedule(() =>
+				this.sendAdditionalInfotoNotion(notion, notesContent, pageID)
+			);
+			allAPIResponses.notes_response = notesResponse;
+
+			// Add Integration section
+			const integrationContent = this.formatIntegration(page);
+			const integrationResponse = await limiter.schedule(() =>
+				this.sendAdditionalInfotoNotion(notion, integrationContent, pageID)
+			);
+			allAPIResponses.integration_response = integrationResponse;
+
+			// Add Alt Text section
+			const altTextContent = this.formatAltText(page);
+			const altTextResponse = await limiter.schedule(() =>
+				this.sendAdditionalInfotoNotion(notion, altTextContent, pageID)
+			);
+			allAPIResponses.alt_text_response = altTextResponse;
+
+			// Add Meta section
+			const metaContent = this.formatMeta(page);
+			const metaResponse = await limiter.schedule(() =>
+				this.sendAdditionalInfotoNotion(notion, metaContent, pageID)
+			);
+			allAPIResponses.meta_response = metaResponse;
+
+			// Add footer
+			const footerResponse = await limiter.schedule(() =>
+				this.addFooterToNotion(notion, pageID)
+			);
+			allAPIResponses.footer_response = footerResponse;
+
+			return allAPIResponses;
+		},
 
 			if (
 				!this.translate_transcript ||
