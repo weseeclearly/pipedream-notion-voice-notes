@@ -2050,158 +2050,155 @@ export default {
 
 			return responseHolder;
 		},
-async updateNotionPage(notion, page) {
-			console.log(`Updating the Notion page with all leftover information:`);
-			console.dir(page);
+updateNotionPage: async function(notion, page) {
+    console.log(`Updating the Notion page with all leftover information:`);
+    console.dir(page);
 
-			const limiter = new Bottleneck({
-				maxConcurrent: 1,
-				minTime: 300,
-			});
+    const limiter = new Bottleneck({
+        maxConcurrent: 1,
+        minTime: 300,
+    });
 
-			const pageID = page.response.id.replace(/-/g, "");
+    const pageID = page.response.id.replace(/-/g, "");
 
-			const allAPIResponses = {};
+    const allAPIResponses = {};
 
-			// Update Summary property with TL;DR
-			await notion.pages.update({
-				page_id: pageID,
-				properties: {
-					Summary: {
-						rich_text: [
-							{
-								text: {
-									content: page.tldr,
-								},
-							},
-						],
-					},
-				},
-			});
+    // Update Summary property with TL;DR
+    await notion.pages.update({
+        page_id: pageID,
+        properties: {
+            Summary: {
+                rich_text: [
+                    {
+                        text: {
+                            content: page.tldr,
+                        },
+                    },
+                ],
+            },
+        },
+    });
 
-			// Existing content addition logic, modified to follow the new structure
-			if (page.summary) {
-				const summaryArray = page.summary;
-				const summaryAdditionResponses = await Promise.all(
-					summaryArray.map((summary, index) =>
-						limiter.schedule(() =>
-							this.sendTranscripttoNotion(
-								notion,
-								summary,
-								pageID,
-								index,
-								"Transcript",
-								"transcript"
-							)
-						)
-					)
-				);
-				allAPIResponses.summary_responses = summaryAdditionResponses;
-			}
+    // Existing content addition logic, modified to follow the new structure
+    if (page.summary) {
+        const summaryArray = page.summary;
+        const summaryAdditionResponses = await Promise.all(
+            summaryArray.map((summary, index) =>
+                limiter.schedule(() =>
+                    this.sendTranscripttoNotion(
+                        notion,
+                        summary,
+                        pageID,
+                        index,
+                        "Transcript",
+                        "transcript"
+                    )
+                )
+            )
+        );
+        allAPIResponses.summary_responses = summaryAdditionResponses;
+    }
 
-			if (page.translation) {
-				const translationArray = page.translation;
-				const translationAdditionResponses = await Promise.all(
-					translationArray.map((translation, index) =>
-						limiter.schedule(() =>
-							this.sendTranscripttoNotion(
-								notion,
-								translation,
-								pageID,
-								index,
-								"Translated Transcript",
-								"translation"
-							)
-						)
-					)
-				);
-				allAPIResponses.translation_responses = translationAdditionResponses;
-			}
+    if (page.translation) {
+        const translationArray = page.translation;
+        const translationAdditionResponses = await Promise.all(
+            translationArray.map((translation, index) =>
+                limiter.schedule(() =>
+                    this.sendTranscripttoNotion(
+                        notion,
+                        translation,
+                        pageID,
+                        index,
+                        "Translated Transcript",
+                        "translation"
+                    )
+                )
+            )
+        );
+        allAPIResponses.translation_responses = translationAdditionResponses;
+    }
 
-			// Add Notes section
-			const notesContent = this.formatNotes(page);
-			const notesResponse = await limiter.schedule(() =>
-				this.sendAdditionalInfotoNotion(notion, notesContent, pageID)
-			);
-			allAPIResponses.notes_response = notesResponse;
+    // Previously problematic if blocks, now properly integrated
+    if (!this.translate_transcript || 
+        this.translate_transcript.includes("Keep Original") || 
+        this.translate_transcript.includes("Don't Translate") || 
+        !page.translation) {
+        const transcriptArray = page.transcript;
+        const transcriptAdditionResponses = await Promise.all(
+            transcriptArray.map((transcript, index) =>
+                limiter.schedule(() =>
+                    this.sendTranscripttoNotion(
+                        notion,
+                        transcript,
+                        pageID,
+                        index,
+                        page.transcript_header,
+                        "transcript"
+                    )
+                )
+            )
+        );
+        allAPIResponses.transcript_responses = transcriptAdditionResponses;
+    }
 
-			// Add Integration section
-			const integrationContent = this.formatIntegration(page);
-			const integrationResponse = await limiter.schedule(() =>
-				this.sendAdditionalInfotoNotion(notion, integrationContent, pageID)
-			);
-			allAPIResponses.integration_response = integrationResponse;
+    // Add Notes section
+    const notesContent = this.formatNotes(page);
+    const notesResponse = await limiter.schedule(() =>
+        this.sendAdditionalInfotoNotion(notion, notesContent, pageID)
+    );
+    allAPIResponses.notes_response = notesResponse;
 
-			// Add Alt Text section
-			const altTextContent = this.formatAltText(page);
-			const altTextResponse = await limiter.schedule(() =>
-				this.sendAdditionalInfotoNotion(notion, altTextContent, pageID)
-			);
-			allAPIResponses.alt_text_response = altTextResponse;
+    // Add Integration section
+    const integrationContent = this.formatIntegration(page);
+    const integrationResponse = await limiter.schedule(() =>
+        this.sendAdditionalInfotoNotion(notion, integrationContent, pageID)
+    );
+    allAPIResponses.integration_response = integrationResponse;
 
-			// Add Meta section
-			const metaContent = this.formatMeta(page);
-			const metaResponse = await limiter.schedule(() =>
-				this.sendAdditionalInfotoNotion(notion, metaContent, pageID)
-			);
-			allAPIResponses.meta_response = metaResponse;
+    // Add Alt Text section
+    const altTextContent = this.formatAltText(page);
+    const altTextResponse = await limiter.schedule(() =>
+        this.sendAdditionalInfotoNotion(notion, altTextContent, pageID)
+    );
+    allAPIResponses.alt_text_response = altTextResponse;
 
-			// Add footer
-			const footerResponse = await limiter.schedule(() =>
-				this.addFooterToNotion(notion, pageID)
-			);
-			allAPIResponses.footer_response = footerResponse;
+    // Add Meta section
+    const metaContent = this.formatMeta(page);
+    const metaResponse = await limiter.schedule(() =>
+        this.sendAdditionalInfotoNotion(notion, metaContent, pageID)
+    );
+    allAPIResponses.meta_response = metaResponse;
 
-			return allAPIResponses;
-		},
+    // Add footer
+    const footerResponse = await limiter.schedule(() =>
+        this.addFooterToNotion(notion, pageID)
+    );
+    allAPIResponses.footer_response = footerResponse;
 
-			if (
-				!this.translate_transcript ||
-				this.translate_transcript.includes("Keep Original") ||
-				this.translate_transcript.includes("Don't Translate") ||
-				!page.translation
-			) {
-				const transcriptArray = page.transcript;
-				const transcriptAdditionResponses = await Promise.all(
-					transcriptArray.map((transcript, index) =>
-						limiter.schedule(() =>
-							this.sendTranscripttoNotion(
-								notion,
-								transcript,
-								pageID,
-								index,
-								page.transcript_header,
-								"transcript"
-							)
-						)
-					)
-				);
-				allAPIResponses.transcript_responses = transcriptAdditionResponses;
-			}
+    // Handle additional info
+    if (page.additional_info && page.additional_info.length > 0) {
+        const additionalInfo = page.additional_info;
+        const infoHolder = [];
+        const infoBlockMaxLength = 95;
 
-			if (page.additional_info && page.additional_info.length > 0) {
-				const additionalInfo = page.additional_info;
-				const infoHolder = [];
-				const infoBlockMaxLength = 95;
+        for (let i = 0; i < additionalInfo.length; i += infoBlockMaxLength) {
+            const chunk = additionalInfo.slice(i, i + infoBlockMaxLength);
+            infoHolder.push(chunk);
+        }
 
-				for (let i = 0; i < additionalInfo.length; i += infoBlockMaxLength) {
-					const chunk = additionalInfo.slice(i, i + infoBlockMaxLength);
-					infoHolder.push(chunk);
-				}
+        const additionalInfoAdditionResponses = await Promise.all(
+            infoHolder.map((info) =>
+                limiter.schedule(() =>
+                    this.sendAdditionalInfotoNotion(notion, info, pageID)
+                )
+            )
+        );
 
-				const additionalInfoAdditionResponses = await Promise.all(
-					infoHolder.map((info) =>
-						limiter.schedule(() =>
-							this.sendAdditionalInfotoNotion(notion, info, pageID)
-						)
-					)
-				);
+        allAPIResponses.additional_info_responses = additionalInfoAdditionResponses;
+    }
 
-				allAPIResponses.additional_info_responses = additionalInfoAdditionResponses;
-			}
-
-			return allAPIResponses;
-		},
+    return allAPIResponses;
+},
 		async sendTranscripttoNotion(
 			notion,
 			transcript,
